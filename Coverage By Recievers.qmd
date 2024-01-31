@@ -4,16 +4,18 @@ format: html
 editor: visual
 ---
 
-## Quarto
+```{r load-packages, message = FALSE}
+library(tidyverse)
+library(ggplot2)
+```
 
-Quarto enables you to weave together content and executable code into a finished document. To learn more about Quarto see <https://quarto.org>.
-
-## Running Code
-
-When you click the **Render** button a document will be generated that includes both content and the output of embedded code. You can embed code like this:
-
-```{r}
-1 + 1
+```{r load-data, message = FALSE, warning = FALSE}
+coverage_grades <- read_csv("data/coverage_grades.csv")
+coverage_plays <- read_csv("data/coverage_plays_1.csv")
+coverage_plays <- read_csv("data/coverage_plays_2.csv")
+grades <- read_csv("data/grades.csv")
+receiving <- read_csv("data/receiving.csv")
+waa <- read_csv("data/waa.csv")
 ```
 
 You can add options to executable code like this
