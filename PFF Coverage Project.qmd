@@ -1,0 +1,124 @@
+---
+title: "PFF Coverage Project"
+author: "Braylon Ferguson, Carli Olsen, Anmol Sapru"
+format: pdf
+editor: visual
+---
+
+```{r load-data, warning = FALSE, message = FALSE}
+
+library(tidyverse)
+
+coverage_plays <- read_csv("PFF Data/coverage_plays.csv")
+coverage_grades <- read_csv("PFF Data/coverage_grades.csv")
+grades <- read_csv("PFF Data/grades.csv")
+receiving <- read_csv("PFF Data/receiving.csv")
+```
+
+## Vary the score based on the receiver being covered
+
+```{r receiver-weighting-code}
+
+coverage_plays_2021 <- coverage_plays |>
+  filter(season_id == 2021)
+
+composite_receiver_scores <- receiving %>%
+  filter(season == 2021) %>%
+  group_by(player_id) %>%
+  summarise(composite_score = mean(receiver_grade, na.rm = TRUE))
+
+min_score <- min(composite_receiver_scores$composite_score, na.rm = TRUE)
+max_score <- max(composite_receiver_scores$composite_score, na.rm = TRUE)
+composite_receiver_scores$weight <- 0.5 + (composite_receiver_scores$composite_score - min_score) / (max_score - min_score) * (1.5 - 0.5)
+
+receiving_2021_weighted <- merge(receiving, composite_receiver_scores, by = "player_id")
+
+adjusted_coverage_plays <- merge(coverage_plays_2021, receiving_2021_weighted, by = "play_id")
+
+adjusted_coverage_plays$adjusted_coverage_grade <- adjusted_coverage_plays$coverage_grade * adjusted_coverage_plays$weight
+```
+
+```{r}
+
+coverage_plays_long <- adjusted_coverage_plays |>
+  select(coverage_grade, adjusted_coverage_grade) |>
+  pivot_longer(cols = c(coverage_grade, adjusted_coverage_grade),
+               names_to = "grade_type",
+               values_to = "grade_value")
+
+ggplot(coverage_plays_long, aes(x = grade_value, fill = grade_type)) +
+  geom_histogram(position = "identity", alpha = 0.6, binwidth = 0.1) +
+  scale_fill_manual(values = c("coverage_grade" = "blue", "adjusted_coverage_grade" = "red")) +
+  labs(title = "Comparison of Original and Adjusted Coverage Grades",
+       x = "Coverage Grade",
+       y = "Frequency",
+       fill = "Grade Type") +
+  theme_minimal()
+```
+
+## Type of coverage
+
+```{r}
+
+coverage_frequency_player <- coverage_plays |>
+  filter(season_id == 2021) |>
+  count(player_id, man_vs_zone) |>
+  group_by(player_id) |>
+  mutate(total_plays = sum(n), 
+         percentage = n / total_plays)
+
+performance_metrics_player <- coverage_plays |>
+  filter(season_id == 2021) |>
+  group_by(player_id, man_vs_zone) |>
+  summarise(average_grade = mean(coverage_grade, na.rm = TRUE), .groups = 'drop')
+
+coverage_analysis_player <- merge(coverage_frequency_player, performance_metrics_player, by = c("player_id", "man_vs_zone"))
+
+coverage_analysis_player$weighted_grade <- coverage_analysis_player$average_grade * coverage_analysis_player$percentage
+
+min_grade <- min(coverage_analysis_player$weighted_grade, na.rm = TRUE)
+max_grade <- max(coverage_analysis_player$weighted_grade, na.rm = TRUE)
+coverage_analysis_player$normalized_grade <- (coverage_analysis_player$weighted_grade - min_grade) / (max_grade - min_grade)
+
+significant_players <- coverage_analysis_player %>%
+  filter(total_plays > 50)
+
+performance_diff <- significant_players %>%
+  pivot_wider(names_from = man_vs_zone, values_from = c(weighted_grade, normalized_grade)) %>%
+  filter(!is.na(weighted_grade_man) & !is.na(weighted_grade_zone)) %>%
+  mutate(performance_difference = weighted_grade_man - weighted_grade_zone)
+
+top_difference_players <- performance_diff %>%
+  arrange(desc(abs(performance_difference))) %>%
+  head(10)
+
+ggplot(top_difference_players, aes(x = reorder(player_id, performance_difference), y = performance_difference, fill = performance_difference > 0)) +
+  geom_col() +
+  scale_fill_manual(values = c("TRUE" = "blue", "FALSE" = "red"), labels = c("Better in Man", "Better in Zone")) +
+  labs(title = "Top Players with Largest Difference in Performance Between Man and Zone Coverage",
+       x = "Player ID",
+       y = "Performance Difference (Weighted Grade)") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+## Down of play
+
+```{r}
+
+coverage_plays <- coverage_plays |>
+  mutate(
+    close_game = if_else(season_id == 2021 & point_differential <= 8 & time <= 300, 1, 0),
+    critical_down = if_else(down %in% c(3, 4), 1, 0),
+    red_zone = if_else(field_position > 80, 1, 0),
+    base_weight = 1 + 0.5 * close_game + 0.5 * critical_down + 0.5 * red_zone
+  )
+
+coverage_plays$clutch_factor = 1 + 0.2 * (coverage_plays$close_game + coverage_plays$critical_down + coverage_plays$red_zone) 
+
+coverage_plays$final_weighted_grade = coverage_plays$weighted_grade * coverage_plays$clutch_factor
+
+min_grade <- min(coverage_plays$final_weighted_grade, na.rm = TRUE)
+max_grade <- max(coverage_plays$final_weighted_grade, na.rm = TRUE)
+coverage_plays$normalized_grade <- (coverage_plays$final_weighted_grade - min_grade) / (max_grade - min_grade)
+```
