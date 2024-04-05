@@ -10,6 +10,8 @@ editor: visual
 library(tidyverse)
 
 coverage_plays <- read_csv("data/coverage_plays.csv")
+coverage_plays1 <- read_csv("data/coverage_plays_1.csv")
+coverage_plays2 <- read_csv("data/coverage_plays_2.csv")
 coverage_grades <- read_csv("data/coverage_grades.csv")
 grades <- read_csv("data/grades.csv")
 receiving <- read_csv("data/receiving.csv")
@@ -60,37 +62,56 @@ ggplot(coverage_plays_long, aes(x = grade_value, fill = grade_type)) +
 
 ```{r}
 
-coverage_frequency_player <- coverage_plays |>
-  filter(season_id == 2021) |>
-  count(player_id, man_vs_zone) |>
-  group_by(player_id) |>
+# Ensure the required libraries are loaded
+library(dplyr)
+library(tidyr)
+
+# Your previous code for data manipulation
+coverage_frequency_player <- coverage_plays %>%
+  filter(season_id == 2021) %>%
+  count(player_id, man_vs_zone) %>%
+  group_by(player_id) %>%
   mutate(total_plays = sum(n), 
          percentage = n / total_plays)
 
-performance_metrics_player <- coverage_plays |>
-  filter(season_id == 2021) |>
-  group_by(player_id, man_vs_zone) |>
+performance_metrics_player <- coverage_plays %>%
+  filter(season_id == 2021) %>%
+  group_by(player_id, man_vs_zone) %>%
   summarise(average_grade = mean(coverage_grade, na.rm = TRUE), .groups = 'drop')
 
 coverage_analysis_player <- merge(coverage_frequency_player, performance_metrics_player, by = c("player_id", "man_vs_zone"))
 
-coverage_analysis_player$weighted_grade <- coverage_analysis_player$average_grade * coverage_analysis_player$percentage
+coverage_analysis_player$weighted_grade <- with(coverage_analysis_player, average_grade * percentage)
 
 min_grade <- min(coverage_analysis_player$weighted_grade, na.rm = TRUE)
 max_grade <- max(coverage_analysis_player$weighted_grade, na.rm = TRUE)
-coverage_analysis_player$normalized_grade <- (coverage_analysis_player$weighted_grade - min_grade) / (max_grade - min_grade)
+coverage_analysis_player$normalized_grade <- with(coverage_analysis_player, (weighted_grade - min_grade) / (max_grade - min_grade))
 
 significant_players <- coverage_analysis_player %>%
-  filter(total_plays > 50)
+  filter(total_plays > 50) |>
+  filter(man_vs_zone %in% c("Man", "Zone"))
 
-performance_diff <- significant_players %>%
-  pivot_wider(names_from = man_vs_zone, values_from = c(weighted_grade, normalized_grade)) %>%
-  filter(!is.na(weighted_grade_man) & !is.na(weighted_grade_zone)) %>%
-  mutate(performance_difference = weighted_grade_man - weighted_grade_zone)
+significant_players_clean <- significant_players %>%
+  group_by(player_id, man_vs_zone)
 
-top_difference_players <- performance_diff %>%
-  arrange(desc(abs(performance_difference))) %>%
-  head(10)
+significant_players_new <- significant_players_clean |>
+  pivot_wider(id_cols = player_id, names_from = man_vs_zone, values_from = percentage) |>
+  mutate(total_percentage = Man + Zone)
+  
+significant_players_new$man_scaled_percentage = significant_players_new$Man / significant_players_new$total_percentage
+
+significant_players_new$zone_scaled_percentage = significant_players_new$Zone / significant_players_new$total_percentage
+
+significant_players_new$man_final_change = significant_players_new$man_scaled_percentage * significant_players_new$Man
+
+significant_players_new$zone_final_change = significant_players_new$zone_scaled_percentage * significant_players_new$Zone
+
+significant_players_new$man_final_change_normalized <- ((significant_players_new$man_final_change - min(significant_players_new$man_final_change)) / (max(significant_players_new$man_final_change) - min(significant_players_new$man_final_change))) - 0.5
+
+significant_players_new$zone_final_change_normalized <- ((significant_players_new$zone_final_change - min(significant_players_new$zone_final_change)) / (max(significant_players_new$zone_final_change) - min(significant_players_new$zone_final_change))) - 0.5
+
+significant_players_new |>
+  select(player_id, man_final_change_normalized, zone_final_change_normalized)
 
 ggplot(top_difference_players, aes(x = reorder(player_id, performance_difference), y = performance_difference, fill = performance_difference > 0)) +
   geom_col() +
