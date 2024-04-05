@@ -9,10 +9,10 @@ editor: visual
 
 library(tidyverse)
 
-coverage_plays <- read_csv("PFF Data/coverage_plays.csv")
-coverage_grades <- read_csv("PFF Data/coverage_grades.csv")
-grades <- read_csv("PFF Data/grades.csv")
-receiving <- read_csv("PFF Data/receiving.csv")
+coverage_plays <- read_csv("data/coverage_plays.csv")
+coverage_grades <- read_csv("data/coverage_grades.csv")
+grades <- read_csv("data/grades.csv")
+receiving <- read_csv("data/receiving.csv")
 ```
 
 ## Vary the score based on the receiver being covered
